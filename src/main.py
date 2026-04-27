@@ -2,6 +2,8 @@ import machine
 import time
 import ssd1306
 
+print("Teste")
+
 # ==========================================
 # Configuração de Pinos e Objetos
 # ==========================================
