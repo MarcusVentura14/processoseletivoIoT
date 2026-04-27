@@ -251,66 +251,45 @@ Preencha todas as seções abaixo de forma **clara, objetiva e técnica**.
 
 ## 1️⃣ Visão Geral da Solução
 
-Descreva, em poucas palavras:
-
-- Qual é o objetivo do seu projeto  
-- O que o sistema embarcado simulado faz  
-- Como o usuário interage com ele (se aplicável)
-
----
+O projeto implementa um **Sensor de Proximidade Reativo** (inspirado em radares de ré automotivos). Ele utiliza ondas ultrassônicas para calcular a distância física em tempo real, fornecendo feedback visual através de um display OLED e feedback auditivo dinâmico, cuja pulsação sonora acelera à medida que se aproxima do obstáculo, culminando em um alarme intermitente de colisão com suporte a desativação manual.
 
 ## 2️⃣ Arquitetura do Sistema Embarcado
 
-Explique a arquitetura lógica do seu projeto, abordando:
+A solução foi projetada com foco em programação não-bloqueante e concorrência no Super Loop:
 
-- Fluxo principal do programa (`main.py`)  
-- Estrutura de estados, loops ou temporizações  
-- Como os componentes interagem entre si  
+1. **Gestão de Tarefas (Ticks):** Em vez de paralisar o microcontrolador com funções de `sleep()`, o firmware agenda a leitura do sensor e as pulsações PWM do buzzer avaliando deltas de tempo via `time.ticks_ms()`. Isso garante que o display não trave enquanto o alarme soa.
+2. **Máquina de Estados de Risco:** O fluxo é dividido nos estados `STATE_SAFE` (>100cm), `STATE_PROXIMITY` (<=100cm) e `STATE_COLLISION` (<= 2.0cm).
+3. **Mapeamento Dinâmico por Degraus:** No estado de proximidade, o intervalo de tempo entre as interrupções sonoras não é linear. Ele utiliza fatores multiplicativos que diminuem em degraus (a cada 20cm inicialmente, e a cada 5cm na reta final), criando uma curva exponencial de aceleração rítmica.
 
-Se desejar, utilize tópicos ou um pequeno diagrama em texto.
-
----
 
 ## 3️⃣ Componentes Utilizados na Simulação
 
-Liste os principais componentes definidos no `diagram.json`, por exemplo:
+- **Microcontrolador:** ESP32 (DevKitC V4).
+- **Sensor HC-SR04 (Pinos 5 e 18):** Envio de pulso de Trigger e leitura não-bloqueante do tempo do Echo.
+- **Display OLED SSD1306 (I2C - Pinos 21/22):** Interface Homem-Máquina para telemetria da distância e status da máquina de estados.
+- **Buzzer Piezoelétrico (Pino 13 - PWM):** Atuador sonoro. Modula tanto o *duty cycle* (liga/desliga) quanto a frequência (Hz) para criar tons distintos.
+- **Push Button (Pino 12 - IRQ):** Interface de desarmamento vinculada à interrupção de hardware por borda de descida.
 
-- Tipo de placa utilizada  
-- LEDs, botões, sensores, atuadores, etc.  
-- Função de cada componente no sistema  
-
----
 
 ## 4️⃣ Decisões Técnicas Relevantes
 
-Explique brevemente decisões importantes tomadas durante o desenvolvimento, como:
+- **Uso do time_pulse_us:** O cálculo de distância evitou bibliotecas externas, utilizando a função nativa do MicroPython com um timeout de 30.000 microssegundos para evitar que o código ficasse preso esperando um eco de um ambiente vazio.
+- **Articulação Sonora (Estacato):** Para simular a precisão de um radar automotivo real, o pulso sonoro do bip foi fixado no tempo mínimo audível do simulador (10 milissegundos), garantindo ataques curtos e secos que não se atropelam em altas velocidades.
+- **Efeito Sirene (Ambulância):** No estado crítico de colisão, o PWM alterna suas frequências entre 800Hz e 1200Hz a cada 100ms de forma autônoma para causar desconforto acústico e gerar um alerta assertivo, até ser interrompido pelo usuário.
+- **Precedência de Hardware (IRQ):** A função de silenciar o alarme (`btn_isr`) acontece via interrupção. Isso significa que, independentemente da carga processual do momento, o comando do operador desliga o som no exato milissegundo do acionamento.
+- **Roteamento de Circuito (Bus Routing):** O diagrama `diagram.json` foi editado a nível de código para garantir que as trilhas de dados e força (VCC/GND) contornassem o ESP32 de forma ortogonal e sem sobreposições, simulando o design limpo de uma placa de circuito impresso (PCB) real.
 
-- Organização do código  
-- Uso de funções, estados ou constantes  
-- Estratégias para temporização ou controle lógico  
-
----
 
 ## 5️⃣ Resultados Obtidos
 
-Descreva o comportamento final do sistema:
+A simulação no ambiente Wokwi demonstra a eficiente execução do projeyo. Ao alterar a distância do HC-SR04 no simulador:
+- De 400cm até 101cm: O sistema permanece silencioso no estado `SEGURO` e atualiza o painel visualmente.
+- Ao cruzar o limiar de 100cm: O estado muda para `ATENCAO`. Os bipes iniciam compassados. Conforme a distância cai pelas faixas de 80, 60, 40, 20 e 15cm, o ritmo do buzzer acelera vertiginosamente.
+- Em 2.0cm (Limite físico do HC-SR04): O estado `COLISAO!` é ativado. Uma margem de absorção de float no código (2.2cm) garante que a precisão matemática do simulador acione o alarme de dupla frequência sem falhas. 
+- Pressionar o botão aciona a interrupção, que altera instantaneamente a tela para "SILENCIADO" e corta o sinal PWM, que só é rearmado caso o objeto se afaste da zona de perigo.
+De maneira geral, o sistema apresentou-se como um ótimo protótipo de sensor reativo.
 
-- O que funciona corretamente  
-- Quais requisitos foram atendidos  
-- Resultado observado na simulação do Wokwi  
 
----
-
-## 6️⃣ Comentários Adicionais (Opcional)
-
-Utilize este espaço para comentar, se desejar:
-
-- Dificuldades encontradas  
-- Limitações da solução  
-- Melhorias que você faria com mais tempo  
-- Principais aprendizados durante o desafio  
-
----
 
 > ✅ Este relatório faz parte da avaliação técnica.  
 > Clareza, objetividade e organização são tão importantes quanto o funcionamento do código.
