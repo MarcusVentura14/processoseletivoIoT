@@ -1,12 +1,25 @@
 import machine
 import time
+import network
+import ntptime
 import ssd1306
+from umqtt.simple import MQTTClient
 
-print("Teste")
+print('Teste')
 
-# ==========================================
-# Configuração de Pinos e Objetos
-# ==========================================
+print("Inicializando Sistema...")
+
+# ------- Configurações de Rede e Nuvem -------
+
+WIFI_SSID = "Wokwi-GUEST"
+WIFI_PASSWORD = ""
+MQTT_CLIENT_ID = "pnaat-marcus-esp32"
+MQTT_BROKER = "broker.mqttdashboard.com"
+MQTT_PUBLISH_TOPIC_ALERTA = "pnaat/industrial/marcus/alerta"
+
+
+#------- Configuração de Pinos, Sensor, Atuador e Display -------
+
 PIN_TRIG, PIN_ECHO = 5, 18
 PIN_SDA, PIN_SCL = 21, 22
 PIN_BUZZER, PIN_BTN = 13, 12
@@ -18,9 +31,9 @@ oled = ssd1306.SSD1306_I2C(128, 64, i2c)
 buzzer = machine.PWM(machine.Pin(PIN_BUZZER), duty=0)
 btn = machine.Pin(PIN_BTN, machine.Pin.IN, machine.Pin.PULL_UP)
 
-# ==========================================
-# Variáveis de Estado e Temporização
-# ==========================================
+
+# ------- Variáveis de Estado e Temporização -------
+
 STATE_SAFE = 0
 STATE_PROXIMITY = 1
 STATE_COLLISION = 2
@@ -32,22 +45,67 @@ buzzer_active = False
 sirene_high = True
 alarme_silenciado = False
 distancia_atual = 400.0
+mqtt_client = None
 
-# ==========================================
-# Lógica do Botão (Interrupção)
-# ==========================================
+contador_colisoes = 0
+historico_colisoes = [] 
+
+
+# ------- Lógica do Botão (Interrupção) -------
+
 def btn_isr(pin):
     global alarme_silenciado
-    # Só silencia se estiver de fato no estado de colisão
     if current_state == STATE_COLLISION:
         alarme_silenciado = True
-        buzzer.duty(0) # Corta o som imediatamente
+        buzzer.duty(0)
 
 btn.irq(trigger=machine.Pin.IRQ_FALLING, handler=btn_isr)
 
-# ==========================================
-# Funções do Sistema
-# ==========================================
+
+# ------- Funções de Conectividade -------
+
+def display_boot_msg(linha1, linha2=""):
+    oled.fill(0)
+    oled.text("INICIANDO...", 16, 0)
+    oled.text(linha1, 0, 25)
+    oled.text(linha2, 0, 40)
+    oled.show()
+
+def setup_conexoes():
+    global mqtt_client
+    display_boot_msg("Conectando WiFi")
+    sta_if = network.WLAN(network.STA_IF)
+    sta_if.active(True)
+    sta_if.connect(WIFI_SSID, WIFI_PASSWORD)
+    
+    while not sta_if.isconnected():
+        time.sleep(0.5)
+        
+    display_boot_msg("WiFi OK!", "Ajustando Hora")
+    try:
+        ntptime.settime()
+    except Exception as e:
+        pass
+        
+    display_boot_msg("Conectando MQTT")
+    try:
+        mqtt_client = MQTTClient(MQTT_CLIENT_ID, MQTT_BROKER)
+        mqtt_client.connect()
+        display_boot_msg("MQTT OK!", "Sistema Pronto")
+        time.sleep(1)
+    except Exception as e:
+        display_boot_msg("Erro MQTT", str(e))
+        time.sleep(2)
+
+def formatar_data_hora():
+    t_local = time.localtime(time.time() - 10800) 
+    data = "{:02d}/{:02d}/{:04d}".format(t_local[2], t_local[1], t_local[0])
+    hora = "{:02d}:{:02d}:{:02d}".format(t_local[3], t_local[4], t_local[5])
+    return data, hora
+
+
+# ------- Funções do Sistema -------
+
 def ler_distancia():
     trig.value(0)
     time.sleep_us(2)
@@ -72,25 +130,25 @@ def atualizar_oled(dist, estado):
         
     oled.show()
 
-# ==========================================
-# Fluxo Principal
-# ==========================================
+
+# ------- Fluxo Principal -------
+
 def main():
-    global current_state, alarme_silenciado, distancia_atual
+    global current_state, alarme_silenciado, distancia_atual, contador_colisoes, historico_colisoes
     global last_sensor_read, last_buzzer_toggle, buzzer_active, sirene_high
+    
+    setup_conexoes()
     
     while True:
         agora = time.ticks_ms()
         
-        # 1. Leitura do Sensor
+        # Leitura do Sensor
         if time.ticks_diff(agora, last_sensor_read) >= 60:
             distancia_atual = ler_distancia()
             last_sensor_read = agora
             
-            # Análise do Novo Estado
             novo_estado = current_state
             
-            # Margem de 2.2cm absorve o erro de float do simulador garantindo o acionamento em 2cm
             if distancia_atual <= 2.2: 
                 novo_estado = STATE_COLLISION
             elif distancia_atual <= 100.0:
@@ -98,23 +156,57 @@ def main():
             else:
                 novo_estado = STATE_SAFE
                 
-            # Se o estado mudou, reseta as variáveis sonoras para transição limpa
+            # Trata a mudança de estado
             if novo_estado != current_state:
+                
+                # Integração MQTT com histórico e NTP forçado 
+                if novo_estado == STATE_COLLISION and mqtt_client is not None:
+                    
+                    # Força a atualização do relógio com o mundo real na hora da batida
+                    try:
+                        ntptime.settime()
+                    except:
+                        pass
+                        
+                    contador_colisoes += 1
+                    data, hora = formatar_data_hora()
+                    
+                    # Monta a string desta batida específica
+                    nova_batida = "Registro de Incidente #{}: Colisão detectada às {} do dia {}".format(contador_colisoes, hora, data)
+                    
+                    # Adiciona à lista de memória
+                    historico_colisoes.append(nova_batida)
+                    
+                    # Limita a memória a 10 itens para não estourar a RAM do ESP32 e a tela do app
+                    if len(historico_colisoes) > 10:
+                        historico_colisoes.pop(0)
+                        
+                    # Junta todas as batidas com uma quebra de linha (\n)
+                    payload_final = "\n".join(historico_colisoes)
+                    
+                    print(">> ENVIANDO NUVEM:")
+                    print(payload_final)
+                    try:
+                        # Envia o pacote de texto contendo todas as linhas
+                        mqtt_client.publish(MQTT_PUBLISH_TOPIC_ALERTA, payload_final.encode())
+                    except Exception as e:
+                        print("Erro ao enviar MQTT:", e)
+                
                 current_state = novo_estado
                 buzzer.duty(0)
                 buzzer_active = False
                 last_buzzer_toggle = agora
+                
                 if current_state != STATE_COLLISION:
-                    alarme_silenciado = False # Destrava o botão ao sair da colisão
+                    alarme_silenciado = False
             
             atualizar_oled(distancia_atual, current_state)
 
-        # 2. Motor de Áudio Conciliado
+        # Motor de Áudio
         if current_state == STATE_SAFE or alarme_silenciado:
             buzzer.duty(0)
             
         elif current_state == STATE_PROXIMITY:
-            # Aceleração em degraus solicitada (20cm em 20cm -> 5cm em 5cm)
             if distancia_atual > 80: fator = 8
             elif distancia_atual > 60: fator = 6
             elif distancia_atual > 40: fator = 4
@@ -124,7 +216,7 @@ def main():
             else: fator = 0.5
             
             intervalo_silencio = int(distancia_atual * fator)
-            duracao_bip = 10 # Pulso sonoro ultra-curto de 10ms
+            duracao_bip = 10 
             
             if not buzzer_active:
                 if time.ticks_diff(agora, last_buzzer_toggle) >= intervalo_silencio:
@@ -139,14 +231,13 @@ def main():
                     last_buzzer_toggle = agora
                     
         elif current_state == STATE_COLLISION:
-            # Alarme sonoro ininterrupto alternando frequência (Ambulância)
             if time.ticks_diff(agora, last_buzzer_toggle) >= 100:
                 sirene_high = not sirene_high
                 last_buzzer_toggle = agora
                 buzzer.freq(1200 if sirene_high else 800)
                 buzzer.duty(512)
         
-        time.sleep_ms(2) # Resolução extrema para capturar os 10ms de bip sem atrasos
+        time.sleep_ms(2)
 
 if __name__ == "__main__":
     main()
