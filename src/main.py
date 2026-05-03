@@ -9,6 +9,7 @@ print('Teste')
 
 print("Inicializando Sistema...")
 
+
 # ------- Configurações de Rede e Nuvem -------
 
 WIFI_SSID = "Wokwi-GUEST"
@@ -18,7 +19,7 @@ MQTT_BROKER = "broker.mqttdashboard.com"
 MQTT_PUBLISH_TOPIC_ALERTA = "pnaat/industrial/marcus/alerta"
 
 
-#------- Configuração de Pinos, Sensor, Atuador e Display -------
+# ------- Configuração de Pinos, Sensor, Atuador e Display -------
 
 PIN_TRIG, PIN_ECHO = 5, 18
 PIN_SDA, PIN_SCL = 21, 22
@@ -48,7 +49,7 @@ distancia_atual = 400.0
 mqtt_client = None
 
 contador_colisoes = 0
-historico_colisoes = [] 
+historico_colisoes = []
 
 
 # ------- Lógica do Botão (Interrupção) -------
@@ -104,7 +105,7 @@ def formatar_data_hora():
     return data, hora
 
 
-# ------- Funções do Sistema -------
+# ------- Funções do Sistema ------- 
 
 def ler_distancia():
     trig.value(0)
@@ -131,7 +132,7 @@ def atualizar_oled(dist, estado):
     oled.show()
 
 
-# ------- Fluxo Principal -------
+# ------- Lógica Principal -------
 
 def main():
     global current_state, alarme_silenciado, distancia_atual, contador_colisoes, historico_colisoes
@@ -151,7 +152,7 @@ def main():
             
             if distancia_atual <= 2.2: 
                 novo_estado = STATE_COLLISION
-            elif distancia_atual <= 100.0:
+            elif distancia_atual <= 200.0:
                 novo_estado = STATE_PROXIMITY
             else:
                 novo_estado = STATE_SAFE
@@ -159,9 +160,9 @@ def main():
             # Trata a mudança de estado
             if novo_estado != current_state:
                 
-                # Integração MQTT com histórico e NTP forçado 
+                # Integração MQTT com histórico e NTP forçado
                 if novo_estado == STATE_COLLISION and mqtt_client is not None:
-                    
+
                     # Força a atualização do relógio com o mundo real na hora da batida
                     try:
                         ntptime.settime()
@@ -180,8 +181,8 @@ def main():
                     # Limita a memória a 10 itens para não estourar a RAM do ESP32 e a tela do app
                     if len(historico_colisoes) > 10:
                         historico_colisoes.pop(0)
-                        
-                    # Junta todas as batidas com uma quebra de linha (\n)
+
+                    # Junta todas as batidas com uma quebra de linha (\n)    
                     payload_final = "\n".join(historico_colisoes)
                     
                     print(">> ENVIANDO NUVEM:")
@@ -202,35 +203,47 @@ def main():
             
             atualizar_oled(distancia_atual, current_state)
 
+        
         # Motor de Áudio
         if current_state == STATE_SAFE or alarme_silenciado:
             buzzer.duty(0)
             
         elif current_state == STATE_PROXIMITY:
-            if distancia_atual > 80: fator = 8
-            elif distancia_atual > 60: fator = 6
-            elif distancia_atual > 40: fator = 4
-            elif distancia_atual > 20: fator = 2
-            elif distancia_atual > 15: fator = 1.5
-            elif distancia_atual > 10: fator = 1.0
-            else: fator = 0.5
-            
-            intervalo_silencio = int(distancia_atual * fator)
-            duracao_bip = 10 
-            
-            if not buzzer_active:
-                if time.ticks_diff(agora, last_buzzer_toggle) >= intervalo_silencio:
+            if distancia_atual <= 30.0:
+                # Zona Crítica (30cm a 2.2cm): Som contínuo de alerta 
+                if not buzzer_active or time.ticks_diff(agora, last_buzzer_toggle) >= 50:
                     buzzer.freq(1000)
                     buzzer.duty(512)
                     buzzer_active = True
                     last_buzzer_toggle = agora
             else:
-                if time.ticks_diff(agora, last_buzzer_toggle) >= duracao_bip:
-                    buzzer.duty(0)
-                    buzzer_active = False
-                    last_buzzer_toggle = agora
+                # Mapeamento baseado em especificações comerciais reais
+                if distancia_atual >= 80.0:
+                    # 80cm a 200cm: Mapeia de 1500ms a 2000ms (Afastado)
+                    intervalo_silencio = int(1500 + ((distancia_atual - 80) / 120.0) * 500)
+                elif distancia_atual >= 50.0:
+                    # 50cm a 80cm: Mapeia de 1200ms a 1500ms (Transição intermediária)
+                    intervalo_silencio = int(1200 + ((distancia_atual - 50) / 30.0) * 300)
+                else:
+                    # 30cm a 50cm: Mapeia de 300ms a 1200ms (Aproximação rápida)
+                    intervalo_silencio = int(300 + ((distancia_atual - 30) / 20.0) * 900)
+                    
+                duracao_bip = 60 
+                
+                if not buzzer_active:
+                    if time.ticks_diff(agora, last_buzzer_toggle) >= intervalo_silencio:
+                        buzzer.freq(1000)
+                        buzzer.duty(512)
+                        buzzer_active = True
+                        last_buzzer_toggle = agora
+                else:
+                    if time.ticks_diff(agora, last_buzzer_toggle) >= duracao_bip:
+                        buzzer.duty(0)
+                        buzzer_active = False
+                        last_buzzer_toggle = agora
                     
         elif current_state == STATE_COLLISION:
+            # Zona de Impacto (< 2.2cm): Sirene de duas frequências
             if time.ticks_diff(agora, last_buzzer_toggle) >= 100:
                 sirene_high = not sirene_high
                 last_buzzer_toggle = agora
