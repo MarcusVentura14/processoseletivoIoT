@@ -16,11 +16,11 @@
     }
   ],
   "connections": [
-    [ "esp:3V3", "oled:VCC", "red", [ "v-40", "h-160", "v260", "h470" ] ],
+    [ "esp:3V3", "oled:VIN", "red", [ "v-40", "h-160", "v260", "h470" ] ],
     [ "esp:5", "hc:TRIG", "green", [ "h80" ] ],
     [ "esp:18", "hc:ECHO", "orange", [ "h100" ] ],
-    [ "esp:21", "oled:SDA", "cyan", [ "h120" ] ],
-    [ "esp:22", "oled:SCL", "blue", [ "h140" ] ],
+    [ "esp:21", "oled:DATA", "cyan", [ "h120" ] ],
+    [ "esp:22", "oled:CLK", "blue", [ "h140" ] ],
     [ "esp:12", "btn:1.r", "yellow", [ "h-80", "v140" ] ],
     [ "esp:GND.1", "btn:2.r", "black", [ "h-14.21", "v28.8", "h-278.4", "v-19.2", "h9.6" ] ],
     [ "esp:GND.1", "buzzer:1", "black", [ "h-14.21", "v-38.4", "h-278.4", "v-115.2", "h-9.6" ] ],
