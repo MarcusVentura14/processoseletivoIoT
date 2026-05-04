@@ -26,9 +26,9 @@ jobs:
         
         docker cp esp32-fs-builder:/fs.bin .
 
-    #- name: Test with Wokwi
-    #  uses: wokwi/wokwi-ci-action@v1
-    #  with:
-     #   token: ${{ secrets.WOKWI_CLI_TOKEN }}
-      #  path: /
-       # expect_text: 'Teste'
+    - name: Test with Wokwi
+      uses: wokwi/wokwi-ci-action@v1
+      with:
+        token: ${{ secrets.WOKWI_CLI_TOKEN }}
+        path: /
+        expect_text: 'Teste'
