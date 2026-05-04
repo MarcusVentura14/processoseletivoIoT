@@ -251,20 +251,49 @@ Preencha todas as seções abaixo de forma **clara, objetiva e técnica**.
 
 ## 1️⃣ Visão Geral da Solução
 
-O projeto implementa um **Sensor de Proximidade Reativo** (inspirado em radares de ré automotivos). Ele utiliza ondas ultrassônicas para calcular a distância física em tempo real, fornecendo feedback visual através de um display OLED e feedback auditivo dinâmico, cuja pulsação sonora acelera à medida que se aproxima do obstáculo, culminando em um alarme intermitente de colisão com suporte a desativação manual.
+O projeto implementa um Sensor de Proximidade Reativo (inspirado em radares de ré automotivos) utilizando um ESP32. Seu mecanismo utiliza ondas ultrassônicas para calcular a distância física em tempo real, fornecendo feedback visual através de um display OLED e feedback auditivo dinâmico. A lógica de controle do buzzer utiliza interpolação matemática para replicar o padrão comercial, acelerando a pulsação sonora de forma progressiva e linear à medida que o obstáculo se aproxima. O sistema conta também com um alarme de colisão com suporte a desativação manual via interrupções de hardware (IRQ) e uma camada de conectividade IoT que utiliza protocolos MQTT e NTP para sincronização de tempo, telemetria de dados e registro remoto de incidentes.
 
 ## 2️⃣ Arquitetura do Sistema Embarcado
 
-A solução foi projetada com foco em programação não-bloqueante e concorrência no Super Loop:
+### Fluxo Principal do Programa
 
-1. **Gestão de Tarefas (Ticks):** Em vez de paralisar o microcontrolador com funções de `sleep()`, o firmware agenda a leitura do sensor e as pulsações PWM do buzzer avaliando deltas de tempo via `time.ticks_ms()`. Isso garante que o display não trave enquanto o alarme soa.
-2. **Máquina de Estados de Risco:** O fluxo é dividido nos estados `STATE_SAFE` (>100cm), `STATE_PROXIMITY` (<=100cm) e `STATE_COLLISION` (<= 2.0cm).
-3. **Mapeamento Dinâmico por Degraus:** No estado de proximidade, o intervalo de tempo entre as interrupções sonoras não é linear. Ele utiliza fatores multiplicativos que diminuem em degraus (a cada 20cm inicialmente, e a cada 5cm na reta final), criando uma curva exponencial de aceleração rítmica.
+Antes de iniciar o monitoramento, o sistema chama a função `setup_conexoes()`. Neste momento, o ESP32 conecta-se à rede Wi-Fi, sincroniza o relógio interno via NTP e estabelece a conexão com o broker MQTT. O display OLED informa o status visual de cada uma dessas etapas de boot.
 
+Finalizada a inicialização, o sistema entra em um While True executando dois blocos de verificação de maneira assíncrona:
+
+**Sensoriamento, Estado e Nuvem:** A cada 60ms, o código lê o sensor ultrassônico e avalia a distância. Baseado nessa leitura, ele atualiza a máquina de estados (em `STATE_COLLISION`, `STATE_PROXIMITY` ou `STATE_SAFE`). Caso detecte a entrada no estado de Colisão, o sistema formata a data/hora exata do incidente e publica o alerta no servidor MQTT. Ao fim desta etapa, o display OLED é atualizado.
+
+**Motor de Áudio:** Logo em seguida, o loop avalia o estado atual para comandar o pino PWM do Buzzer. Se estiver na zona de proximidade, ele calcula o intervalo dinâmico e dispara pulsos curtos de 60ms (ou sinal contínuo, caso atinja a zona crítica inferior a 30cm), se estiver em colisão, alterna as frequências da sirene.
+
+Ao final do ciclo principal, há apenas um micro-atraso estrutural de 2 milissegundos (`time.sleep_ms(2)`), implementado para estabilizar o processador e o watchdog timer do microcontrolador, evitando travamentos no simulador ou no hardware físico.
+
+### Estrutura de Estados e Temporizações
+
+O projeto implementa temporização Não-Bloqueante ao evitar a função `sleep()` e gerir todo o agendamento de tarefas (leitura do sensor, bipes e atualização da tela) pelo `time.ticks_ms()`. Isso impede que o display trave ou a rede caia enquanto o alarme sonoro é processado.
+
+Quanto à Estrutura de Estados, o sistema reage ao ambiente baseando-se em três estados definidos pela distância:
+
+**STATE_SAFE (> 200cm):** Sistema em monitoramento passivo.
+
+**STATE_PROXIMITY (2.2cm a 200cm):** Utiliza uma interpolação matemática linear para definir os alertas. O pulso do buzzer é fixo em 60ms (padrão comercial), mas o intervalo de silêncio cai progressivamente de 1500ms para 300ms conforme a aproximação. Ao atingir 30cm, o som torna-se contínuo.
+
+**STATE_COLLISION (<= 2.2cm):** Colisão detectada. Aciona a sirene de emergência e a telemetria.
+
+### Interação entre Componentes
+
+O fluxo de dados do sistema opera em quatro vias de comunicação:
+
+**Entrada (Sensoriamento):** O HC-SR04 mede a distância física e atualiza o estado interno do ESP32.
+
+**Saída (Atuação):** Em resposta, o ESP32 modula imediatamente o som do Buzzer (via PWM) e atualiza os dados visuais no Display OLED (via I2C).
+
+**Controle (Intervenção):** O botão tátil atua sob uma interrupção de hardware (IRQ), sobrepondo-se ao fluxo principal para silenciar o alarme de forma instantânea.
+
+**Nuvem (Telemetria):** Exclusivamente no estado de colisão, o sistema captura a hora exata (via NTP) e despacha o alerta para o servidor remoto (via MQTT).
 
 ## 3️⃣ Componentes Utilizados na Simulação
 
-- **Microcontrolador:** ESP32 (DevKitC V4).
+- **Microcontrolador:** ESP32 (DevKitC V4). Atua como o cérebro da operação e fornece o módulo Wi-Fi nativo para a telemetria via rede.
 - **Sensor HC-SR04 (Pinos 5 e 18):** Envio de pulso de Trigger e leitura não-bloqueante do tempo do Echo.
 - **Display OLED SSD1306 (I2C - Pinos 21/22):** Interface Homem-Máquina para telemetria da distância e status da máquina de estados.
 - **Buzzer Piezoelétrico (Pino 13 - PWM):** Atuador sonoro. Modula tanto o *duty cycle* (liga/desliga) quanto a frequência (Hz) para criar tons distintos.
@@ -273,21 +302,28 @@ A solução foi projetada com foco em programação não-bloqueante e concorrên
 
 ## 4️⃣ Decisões Técnicas Relevantes
 
-- **Uso do time_pulse_us:** O cálculo de distância evitou bibliotecas externas, utilizando a função nativa do MicroPython com um timeout de 30.000 microssegundos para evitar que o código ficasse preso esperando um eco de um ambiente vazio.
-- **Articulação Sonora (Estacato):** Para simular a precisão de um radar automotivo real, o pulso sonoro do bip foi fixado no tempo mínimo audível do simulador (10 milissegundos), garantindo ataques curtos e secos que não se atropelam em altas velocidades.
-- **Efeito Sirene (Ambulância):** No estado crítico de colisão, o PWM alterna suas frequências entre 800Hz e 1200Hz a cada 100ms de forma autônoma para causar desconforto acústico e gerar um alerta assertivo, até ser interrompido pelo usuário.
-- **Precedência de Hardware (IRQ):** A função de silenciar o alarme (`btn_isr`) acontece via interrupção. Isso significa que, independentemente da carga processual do momento, o comando do operador desliga o som no exato milissegundo do acionamento.
-- **Roteamento de Circuito (Bus Routing):** O diagrama `diagram.json` foi editado a nível de código para garantir que as trilhas de dados e força (VCC/GND) contornassem o ESP32 de forma ortogonal e sem sobreposições, simulando o design limpo de uma placa de circuito impresso (PCB) real.
+Visando a manutenibilidade, legibilidade e a eficiência do processador, o projeto utilizou as seguintes estratégias: 
+
+**Uso de Constantes Nominais:** Pinos e limiares físicos foram definidos como constantes globais nominais, facilitando a leitura e futuras calibrações de hardware.
+
+**Modularidade:** As rotinas de boot e rede (Wi-Fi, NTP e MQTT) foram isoladas em uma função dedicada (`setup_conexoes()`), mantendo o bloco main() focado exclusivamente no Super Loop.
+
+**Redução de Complexidade:** A interpolação matemática linear substituiu longas cadeias de if/else no motor de áudio, otimizando o processamento e a memória do ESP32.
+
+**Resiliência contra Latência:** O uso de interrupção de hardware (IRQ) para o botão garante o silenciamento instantâneo do alarme, não sendo afetado por eventuais gargalos de rede durante envios MQTT.
 
 
 ## 5️⃣ Resultados Obtidos
 
-A simulação no ambiente Wokwi demonstra a eficiente execução do projeyo. Ao alterar a distância do HC-SR04 no simulador:
-- De 400cm até 101cm: O sistema permanece silencioso no estado `SEGURO` e atualiza o painel visualmente.
-- Ao cruzar o limiar de 100cm: O estado muda para `ATENCAO`. Os bipes iniciam compassados. Conforme a distância cai pelas faixas de 80, 60, 40, 20 e 15cm, o ritmo do buzzer acelera vertiginosamente.
-- Em 2.0cm (Limite físico do HC-SR04): O estado `COLISAO!` é ativado. Uma margem de absorção de float no código (2.2cm) garante que a precisão matemática do simulador acione o alarme de dupla frequência sem falhas. 
-- Pressionar o botão aciona a interrupção, que altera instantaneamente a tela para "SILENCIADO" e corta o sinal PWM, que só é rearmado caso o objeto se afaste da zona de perigo.
-De maneira geral, o sistema apresentou-se como um ótimo protótipo de sensor reativo.
+As simulações realizadas no ambiente Wokwi validaram a eficiência do código, que atendeu a todos os requisitos arquiteturais e de conectividade propostos. O resultado final é um protótipo funcional de nível comercial, destacando-se pela validação dos seguintes comportamentos:
+
+**Feedback Audiovisual em Tempo Real:** A leitura da distância no sensor, a atualização do display OLED e a resposta do buzzer operam de forma fluida e simultânea. A ausência de travamentos no simulador comprova o sucesso da arquitetura não-bloqueante.
+
+**Transição de Estados:** O sistema obedece rigorosamente aos limites estabelecidos. A aceleração rítmica do alarme sonoro ocorre progressivamente na zona de proximidade e muda corretamente para a sirene de emergência ao cruzar a marca de 2.2cm.
+
+**Controle de Interrupção:** O acionamento do botão físico no Wokwi corta o som do buzzer imediatamente, validando o funcionamento prioritário da rotina de IRQ (Hardware Interrupt).
+
+**Telemetria IoT Validada:** O fluxo de comunicação com a nuvem foi testado com êxito. Ao simular uma colisão no Wokwi (arrastando o controle de distância para ≤ 2.2cm), o sistema formata o pacote com a hora exata (NTP) e o despacha. A recepção íntegra desses dados foi monitorada e confirmada em tempo real através do aplicativo MQTT Dashboard Client.
 
 
 
