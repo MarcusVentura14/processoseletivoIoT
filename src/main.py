@@ -5,10 +5,7 @@ import ntptime
 import ssd1306
 from umqtt.simple import MQTTClient
 
-print('Teste')
-
 print("Inicializando Sistema...")
-
 
 # ------- Configurações de Rede e Nuvem -------
 
@@ -139,6 +136,8 @@ def main():
     global last_sensor_read, last_buzzer_toggle, buzzer_active, sirene_high
     
     setup_conexoes()
+
+    print('Teste')
     
     while True:
         agora = time.ticks_ms()
