@@ -16,8 +16,12 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        lfs: true  # Garante o download do seu micropython.bin real e customizado
+
+    - name: Adapta estrutura para o Docker original
+      run: |
+        # Extrai o código da pasta src para a raiz antes do empacotamento.
+        # Isso garante que o main.py vá para a raiz do microcontrolador.
+        cp -a src/. .
 
     - name: Build Docker image
       run: docker build -t esp32-builder -f Dockerfile .
@@ -27,20 +31,9 @@ jobs:
         docker run --name esp32-fs-builder esp32-builder /bin/bash
         docker cp esp32-fs-builder:/fs.bin .
 
-    - name: Garante wokwi.toml limpo para liberar o console
-      run: |
-        # Sobrescreve o wokwi.toml dinamicamente para garantir que a porta serial
-        # não seja redirecionada pelo rfc2217ServerPort na esteira.
-        cat << 'EOF' > wokwi.toml
-        [wokwi]
-        version = 1
-        firmware = "flasher_args.json"
-        EOF
-
     - name: Test with Wokwi
       uses: wokwi/wokwi-ci-action@v1
       with:
         token: ${{ secrets.WOKWI_CLI_TOKEN }}
         path: .
-        timeout: 60000
         expect_text: 'Teste'
