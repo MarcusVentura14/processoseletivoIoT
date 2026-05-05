@@ -1,3 +1,4 @@
+print('Teste', flush=True)
 import machine
 import time
 import network
