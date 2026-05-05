@@ -25,11 +25,13 @@ jobs:
     - name: Run container and generate fs.bin
       run: |
         docker run --name esp32-fs-builder esp32-builder /bin/bash
-        
         docker cp esp32-fs-builder:/fs.bin .
 
     - name: Prepara codigo nativo para o Wokwi
-      run: cp src/main.py ./main.py
+      run: |
+
+        cp -r src/* .
+        rm -f wokwi.toml flasher_args.json
 
     - name: Test with Wokwi
       uses: wokwi/wokwi-ci-action@v1
