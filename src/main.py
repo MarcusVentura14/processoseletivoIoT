@@ -1,4 +1,3 @@
-print('Teste', flush=True)
 import machine
 import time
 import network
@@ -77,6 +76,8 @@ def setup_conexoes():
     sta_if.active(True)
     sta_if.connect(WIFI_SSID, WIFI_PASSWORD)
     
+    print('Teste', flush=True)
+
     # Adicionamos um "Timeout" de 10 segundos (20 tentativas de 0.5s)
     tentativas = 0
     while not sta_if.isconnected() and tentativas < 20:

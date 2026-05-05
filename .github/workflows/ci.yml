@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feat/actions-build
   pull_request:
     branches:
       - main
@@ -16,19 +15,6 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        lfs: true  # Garante que seus binários venham íntegros
-
-    - name: 🚨 OVERRIDE DE EMERGÊNCIA (Força Bruta)
-      run: |
-        # 1. Quebra o silêncio: Remove o redirecionamento de porta do Wokwi
-        sed -i '/rfc2217ServerPort/d' wokwi.toml || true
-        
-        # 2. Engana o Dockerfile: Copia seu código pra raiz para ele achar o main.py
-        cp -a src/. . 2>/dev/null || true
-        
-        # 3. Tiro de misericórdia: Injeta a resposta do sinal verde no milissegundo zero da placa
-        sed -i '1s/^/import time\nprint("Teste", flush=True)\ntime.sleep(1)\n/' main.py || true
 
     - name: Build Docker image
       run: docker build -t esp32-builder -f Dockerfile .
@@ -44,4 +30,4 @@ jobs:
         token: ${{ secrets.WOKWI_CLI_TOKEN }}
         path: .
         expect_text: 'Teste'
-        timeout: 15000
+        timeout: 120000
