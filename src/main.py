@@ -77,8 +77,14 @@ def setup_conexoes():
     sta_if.active(True)
     sta_if.connect(WIFI_SSID, WIFI_PASSWORD)
     
-    while not sta_if.isconnected():
+    # Adicionamos um "Timeout" de 10 segundos (20 tentativas de 0.5s)
+    tentativas = 0
+    while not sta_if.isconnected() and tentativas < 20:
         time.sleep(0.5)
+        tentativas += 1
+        
+    # Se conectou, segue a vida. Se não conectou, os blocos 'try/except' 
+    # abaixo vão proteger o código de quebrar, e ele continuará rodando.
         
     display_boot_msg("WiFi OK!", "Ajustando Hora")
     try:
@@ -95,6 +101,8 @@ def setup_conexoes():
     except Exception as e:
         display_boot_msg("Erro MQTT", str(e))
         time.sleep(2)
+        
+    
 
 def formatar_data_hora():
     t_local = time.localtime(time.time() - 10800) 
