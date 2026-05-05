@@ -25,10 +25,10 @@ jobs:
         docker run --name esp32-fs-builder esp32-builder /bin/bash
         docker cp esp32-fs-builder:/fs.bin .
 
-    - name: Prepara Firmware Oficial e Configurações Wokwi
+    - name: Prepara Firmware Oficial e Configuracoes Wokwi
       run: |
-        # 1. Baixa uma versão estável e oficial do MicroPython para ESP32
-        wget -q https://micropython.org/resources/firmware/esp32-20230426-v1.20.0.bin -O micropython_oficial.bin
+        # 1. Baixa uma versao estavel garantida do MicroPython (v1.19.1) via curl
+        curl -L -f -o micropython_oficial.bin https://micropython.org/resources/firmware/esp32-20220618-v1.19.1.bin
         
         # 2. Cria um flasher_args limpo unindo o OS oficial com o seu sistema de arquivos Docker
         cat << 'EOF' > flasher_args.json
@@ -46,7 +46,7 @@ jobs:
         }
         EOF
         
-        # 3. Recria o wokwi.toml para satisfazer a exigência da CLI
+        # 3. Recria o wokwi.toml para satisfazer a exigencia da CLI
         cat << 'EOF' > wokwi.toml
         [wokwi]
         version = 1
