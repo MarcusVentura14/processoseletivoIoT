@@ -16,6 +16,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        lfs: true
 
     - name: Build Docker image
       run: docker build -t esp32-builder -f Dockerfile .
