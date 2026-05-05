@@ -27,8 +27,8 @@ jobs:
 
     - name: Prepara Firmware Oficial e Configuracoes Wokwi
       run: |
-        # 1. Baixa uma versao estavel garantida do MicroPython (v1.19.1) via curl
-        curl -L -f -o micropython_oficial.bin https://micropython.org/resources/firmware/esp32-20220618-v1.19.1.bin
+        # 1. Baixa a versao estavel e atualizada do MicroPython (v1.22.1 com nova nomenclatura)
+        curl -L -f -o micropython_oficial.bin https://micropython.org/resources/firmware/ESP32_GENERIC-20240105-v1.22.1.bin
         
         # 2. Cria um flasher_args limpo unindo o OS oficial com o seu sistema de arquivos Docker
         cat << 'EOF' > flasher_args.json
