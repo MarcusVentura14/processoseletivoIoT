@@ -16,8 +16,6 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        lfs: true
 
     - name: Build Docker image
       run: docker build -t esp32-builder -f Dockerfile .
@@ -27,11 +25,33 @@ jobs:
         docker run --name esp32-fs-builder esp32-builder /bin/bash
         docker cp esp32-fs-builder:/fs.bin .
 
-    - name: Prepara codigo nativo para o Wokwi
+    - name: Prepara Firmware Oficial e Configurações Wokwi
       run: |
-
-        cp -r src/* .
-        rm -f wokwi.toml flasher_args.json
+        # 1. Baixa uma versão estável e oficial do MicroPython para ESP32
+        wget -q https://micropython.org/resources/firmware/esp32-20230426-v1.20.0.bin -O micropython_oficial.bin
+        
+        # 2. Cria um flasher_args limpo unindo o OS oficial com o seu sistema de arquivos Docker
+        cat << 'EOF' > flasher_args.json
+        {
+          "flash_files": {
+            "0x1000": "micropython_oficial.bin",
+            "0x200000": "fs.bin"
+          },
+          "extra_esptool_args": {
+            "after": "hard_reset",
+            "before": "default_reset",
+            "stub": true,
+            "chip": "esp32"
+          }
+        }
+        EOF
+        
+        # 3. Recria o wokwi.toml para satisfazer a exigência da CLI
+        cat << 'EOF' > wokwi.toml
+        [wokwi]
+        version = 1
+        firmware = "flasher_args.json"
+        EOF
 
     - name: Test with Wokwi
       uses: wokwi/wokwi-ci-action@v1
