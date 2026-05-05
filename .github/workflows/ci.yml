@@ -28,6 +28,9 @@ jobs:
         
         docker cp esp32-fs-builder:/fs.bin .
 
+    - name: Prepara codigo nativo para o Wokwi
+      run: cp src/main.py ./main.py
+
     - name: Test with Wokwi
       uses: wokwi/wokwi-ci-action@v1
       with:
